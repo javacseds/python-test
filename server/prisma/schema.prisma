@@ -1,0 +1,86 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AdminUser {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model Student {
+  id                String               @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  rollNumber        String               @unique
+  branch            String
+  year              String
+  semester          String
+  email             String
+  examName          String               @default("Python Programming Assessment")
+  loginTime         DateTime             @default(now())
+  examStartTime     DateTime?
+  submissionTime    DateTime?
+  status            String               @default("Registered")
+  submissionStatus  String               @default("Not Submitted")
+  warningCount      Int                  @default(0)
+  marksObtained     Float                @default(0.0)
+  totalMarks        Float                @default(100.0)
+  finalResult       String               @default("Pending")
+  terminationReason String?
+  timerExpiryTime   DateTime?
+  createdAt         DateTime             @default(now())
+  assignments       QuestionAssignment[]
+  sessions          StudentSession[]
+}
+
+model Question {
+  id               String               @id @default(auto()) @map("_id") @db.ObjectId
+  title            String
+  problemStatement String
+  inputFormat      String
+  outputFormat     String
+  sampleInput      String
+  sampleOutput     String
+  createdAt        DateTime             @default(now())
+  assignments      QuestionAssignment[]
+}
+
+model QuestionAssignment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String   @db.ObjectId
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  questionId    String   @db.ObjectId
+  question      Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  assignedAt    DateTime @default(now())
+  submittedCode String?
+  draftCode     String?
+  marks         Float?
+
+  @@unique([studentId, questionId])
+}
+
+model StudentSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId String   @db.ObjectId
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model EligibleStudent {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  rollNumber String   @unique
+  name       String
+  branch     String
+  year       String
+  semester   String
+  email      String
+  createdAt  DateTime @default(now())
+}
