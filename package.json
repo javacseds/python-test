@@ -1,0 +1,8 @@
+{
+  "name": "assessment-portal-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix client --legacy-peer-deps && npm run build --prefix client"
+  }
+}
