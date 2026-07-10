@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../utils/apiHelper';
 import axios from 'axios';
 import { PlusCircle, FileUp, Database, Trash2, LogOut, FileText, CheckCircle, HelpCircle, Eye, Users, Settings } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -129,7 +130,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   const fetchQuestions = async () => {
     setBankLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/admin/questions', apiConfig);
+      const response = await axios.get(`${API_BASE_URL}/api/admin/questions`, apiConfig);
       setQuestions(response.data);
     } catch (err: any) {
       console.error('Error fetching questions:', err);
@@ -141,7 +142,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   const fetchStudents = async () => {
     setStudentsLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/admin/students', apiConfig);
+      const response = await axios.get(`${API_BASE_URL}/api/admin/students`, apiConfig);
       setStudents(response.data);
     } catch (err: any) {
       console.error('Error fetching students:', err);
@@ -153,7 +154,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   const fetchEligibleStudents = async () => {
     setEligibleLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/admin/eligible-students', apiConfig);
+      const response = await axios.get(`${API_BASE_URL}/api/admin/eligible-students`, apiConfig);
       setEligibleStudents(response.data);
     } catch (err: any) {
       console.error('Error fetching eligible roster:', err);
@@ -164,7 +165,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/admin/settings', apiConfig);
+      const response = await axios.get(`${API_BASE_URL}/api/admin/settings`, apiConfig);
       setEnableRoster(response.data.enableRoster);
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -175,7 +176,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     setSettingsMessage(null);
     setSettingsLoading(true);
     try {
-      const response = await axios.post('http://localhost:5000/api/admin/settings', { enableRoster: enable }, apiConfig);
+      const response = await axios.post(`${API_BASE_URL}/api/admin/settings`, { enableRoster: enable }, apiConfig);
       setEnableRoster(enable);
       setSettingsMessage({ type: 'success', text: response.data.message });
       setTimeout(() => setSettingsMessage(null), 3000);
@@ -194,7 +195,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
   const handleToggleActive = async (studentId: string) => {
     try {
-      const response = await axios.post(`http://localhost:5000/api/admin/students/${studentId}/toggle-active`, {}, apiConfig);
+      const response = await axios.post(`${API_BASE_URL}/api/admin/students/${studentId}/toggle-active`, {}, apiConfig);
       setStudents(prev => prev.map(s => s.id === studentId ? { ...s, isActive: response.data.student.isActive } : s));
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to toggle student active status');
@@ -212,7 +213,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      await axios.post('http://localhost:5000/api/admin/students/bulk-action', {
+      await axios.post(`${API_BASE_URL}/api/admin/students/bulk-action`, {
         studentIds: selectedStudentIds,
         action
       }, apiConfig);
@@ -274,7 +275,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     }
 
     try {
-      await axios.post('http://localhost:5000/api/admin/upload-eligible-students', { students: parsedStudents }, apiConfig);
+      await axios.post(`${API_BASE_URL}/api/admin/upload-eligible-students`, { students: parsedStudents }, apiConfig);
       setUploadMessage({ type: 'success', text: `Successfully registered ${parsedStudents.length} eligible students!` });
       setBulkInput('');
       fetchEligibleStudents();
@@ -287,7 +288,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   const handleDeleteEligible = async (id: string) => {
     if (!window.confirm('Are you sure you want to remove this student from the eligible roster?')) return;
     try {
-      await axios.delete(`http://localhost:5000/api/admin/eligible-students/${id}`, apiConfig);
+      await axios.delete(`${API_BASE_URL}/api/admin/eligible-students/${id}`, apiConfig);
       setEligibleStudents(prev => prev.filter(s => s.id !== id));
     } catch (err) {
       console.error('Delete eligible student error:', err);
@@ -341,7 +342,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     }
 
     try {
-      await axios.delete(`http://localhost:5000/api/admin/students/${id}`, apiConfig);
+      await axios.delete(`${API_BASE_URL}/api/admin/students/${id}`, apiConfig);
       setStudents(prev => prev.filter(s => s.id !== id));
     } catch (err: any) {
       console.error(err);
@@ -351,7 +352,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
   const handleStatusOverride = async (studentId: string, newStatus: string) => {
     try {
-      await axios.post(`http://localhost:5000/api/admin/students/${studentId}/status`, { status: newStatus }, apiConfig);
+      await axios.post(`${API_BASE_URL}/api/admin/students/${studentId}/status`, { status: newStatus }, apiConfig);
       // Local state is updated via socket connection automatically
     } catch (err: any) {
       console.error(err);
@@ -364,7 +365,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     if (!confirmWarning) return;
     
     try {
-      await axios.post(`http://localhost:5000/api/admin/students/${studentId}/warning`, { warningCount: currentWarnings + 1 }, apiConfig);
+      await axios.post(`${API_BASE_URL}/api/admin/students/${studentId}/warning`, { warningCount: currentWarnings + 1 }, apiConfig);
     } catch (err: any) {
       console.error(err);
       alert('Failed to increment warnings.');
@@ -587,7 +588,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
   // Real-time WebSocket synchronization for Student Portal Updates
   useEffect(() => {
-    const socket = io('http://localhost:5000');
+    const socket = io(API_BASE_URL);
 
     socket.on('student_update', (updatedStudent: StudentRecord) => {
       setStudents(prev => {
@@ -631,7 +632,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
     setManualSaving(true);
     try {
-      await axios.post('http://localhost:5000/api/admin/manual-question', manualForm, apiConfig);
+      await axios.post(`${API_BASE_URL}/api/admin/manual-question`, manualForm, apiConfig);
       setManualMessage({ type: 'success', text: 'Question added to the Question Bank successfully!' });
       setManualForm({
         title: '',
@@ -669,7 +670,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
     setPdfParsing(true);
     try {
-      const response = await axios.post('http://localhost:5000/api/admin/upload-pdf', formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/admin/upload-pdf`, formData, {
         headers: {
           ...apiConfig.headers,
           'Content-Type': 'multipart/form-data'
@@ -709,7 +710,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
 
     setBulkSaving(true);
     try {
-      const response = await axios.post('http://localhost:5000/api/admin/save-bulk-questions', {
+      const response = await axios.post(`${API_BASE_URL}/api/admin/save-bulk-questions`, {
         questions: previewQuestions
       }, apiConfig);
       
@@ -734,7 +735,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     }
 
     try {
-      await axios.delete(`http://localhost:5000/api/admin/questions/${id}`, apiConfig);
+      await axios.delete(`${API_BASE_URL}/api/admin/questions/${id}`, apiConfig);
       setQuestions(prev => prev.filter(q => q.id !== id));
       if (selectedQuestion?.id === id) {
         setSelectedQuestion(null);

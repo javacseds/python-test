@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { API_BASE_URL } from './utils/apiHelper';
 import { StudentLogin } from './pages/StudentLogin';
 import { StudentPortal } from './pages/StudentPortal';
 import { AdminLogin } from './pages/AdminLogin';
@@ -29,7 +30,7 @@ function App() {
 
       if (savedStudentToken) {
         try {
-          const response = await axios.get(`http://localhost:5000/api/student/session/${savedStudentToken}`);
+          const response = await axios.get(`${API_BASE_URL}/api/student/session/${savedStudentToken}`);
           setStudentData(response.data.student);
           setStudentQuestions(response.data.questions);
           setView('student-portal');
@@ -81,7 +82,7 @@ function App() {
   // Student-side WebSocket listener for instant warning/disqualification notifications
   useEffect(() => {
     if (view === 'student-portal' && studentData) {
-      const socket = io('http://localhost:5000');
+      const socket = io(API_BASE_URL);
       
       socket.on('student_update', (updatedStudent: any) => {
         if (updatedStudent.id === studentData.id) {

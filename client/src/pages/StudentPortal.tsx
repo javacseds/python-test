@@ -3,6 +3,7 @@ import axios from 'axios';
 import Editor from '@monaco-editor/react';
 import { io, Socket } from 'socket.io-client';
 import { SplitPane } from '../components/SplitPane';
+import { API_BASE_URL } from '../utils/apiHelper';
 import { 
   BookOpen, User, ArrowLeft, ArrowRight, 
   AlertTriangle, Play, CheckSquare, ShieldAlert, Terminal, 
@@ -99,7 +100,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
 
   // Set up WebSockets & Standard Restrictions
   useEffect(() => {
-    const socket = io('http://localhost:5000');
+    const socket = io(API_BASE_URL);
     socketRef.current = socket;
 
     socket.emit('register_student', { studentId: student.id });
@@ -164,7 +165,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'hidden' && !modal.isOpen) {
         try {
-          const res = await axios.post('http://localhost:5000/api/student/warning', {
+          const res = await axios.post(`${API_BASE_URL}/api/student/warning`, {
             studentId: student.id
           });
           const data = res.data;
@@ -198,7 +199,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
     const handleFullscreenChange = async () => {
       if (!document.fullscreenElement && !modal.isOpen) {
         try {
-          const res = await axios.post('http://localhost:5000/api/student/warning', {
+          const res = await axios.post(`${API_BASE_URL}/api/student/warning`, {
             studentId: student.id
           });
           const data = res.data;
@@ -279,7 +280,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
       setSaveStatus('Auto-saving draft...');
       try {
         const promises = Object.entries(answers).map(([qId, code]) => {
-          return axios.post('http://localhost:5000/api/student/auto-save', {
+          return axios.post(`${API_BASE_URL}/api/student/auto-save`, {
             studentId: student.id,
             questionId: qId,
             code
@@ -308,7 +309,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
   const handleStartExam = async () => {
     setLoading(true);
     try {
-      await axios.post('http://localhost:5000/api/student/start-exam', { studentId: student.id });
+      await axios.post(`${API_BASE_URL}/api/student/start-exam`, { studentId: student.id });
       requestFullScreen();
     } catch (err) {
       console.error(err);
@@ -334,7 +335,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
     }));
 
     try {
-      const response = await axios.post('http://localhost:5000/api/student/run-code', {
+      const response = await axios.post(`${API_BASE_URL}/api/student/run-code`, {
         studentId: student.id,
         questionId,
         code,
@@ -402,7 +403,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
     }));
 
     try {
-      await axios.post('http://localhost:5000/api/student/submit-exam', {
+      await axios.post(`${API_BASE_URL}/api/student/submit-exam`, {
         studentId: student.id,
         answers: formattedAnswers
       });
@@ -428,7 +429,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ student, questions
       code
     }));
     try {
-      await axios.post('http://localhost:5000/api/student/submit-exam', {
+      await axios.post(`${API_BASE_URL}/api/student/submit-exam`, {
         studentId: student.id,
         answers: formattedAnswers
       });

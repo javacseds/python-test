@@ -29,8 +29,15 @@ app.use('/api/admin/settings', settingsRoutes);
 app.use('/api/student', studentRoutes);
 
 // Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Question Portal API is active' });
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection by querying admin table
+    await prisma.adminUser.findFirst();
+    return res.json({ status: 'OK', message: 'Question Portal API is active', database: 'Connected' });
+  } catch (dbError: any) {
+    console.error('Health check database error:', dbError);
+    return res.status(500).json({ status: 'ERROR', message: 'Database connection unavailable', error: dbError.message });
+  }
 });
 
 // Automatic seeding of admin & sample questions if database is empty
