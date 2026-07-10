@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { PlusCircle, FileUp, Database, Trash2, LogOut, FileText, CheckCircle, HelpCircle, Eye, Users } from 'lucide-react';
+import { PlusCircle, FileUp, Database, Trash2, LogOut, FileText, CheckCircle, HelpCircle, Eye, Users, Settings } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { io } from 'socket.io-client';
@@ -48,6 +48,8 @@ interface StudentRecord {
   finalResult: string;
   createdAt: string;
   questions: string[];
+  isActive: boolean;
+  isEligible: boolean;
   codeSubmissions?: {
     questionId: string;
     title: string;
@@ -64,7 +66,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'manual' | 'pdf' | 'bank' | 'students' | 'eligible'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'pdf' | 'bank' | 'students' | 'eligible' | 'settings'>('manual');
   
   // Question Bank State
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -74,6 +76,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   // Student List State
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
+
+  // Settings State
+  const [enableRoster, setEnableRoster] = useState<boolean>(false);
+  const [settingsLoading, setSettingsLoading] = useState<boolean>(false);
+  const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
+
+  // Bulk Selection State
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   // Eligible roster state
   const [eligibleStudents, setEligibleStudents] = useState<any[]>([]);
@@ -149,6 +159,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
       console.error('Error fetching eligible roster:', err);
     } finally {
       setEligibleLoading(false);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const response = await axios.get('http://localhost:5000/api/admin/settings', apiConfig);
+      setEnableRoster(response.data.enableRoster);
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+    }
+  };
+
+  const handleSaveSettings = async (enable: boolean) => {
+    setSettingsMessage(null);
+    setSettingsLoading(true);
+    try {
+      const response = await axios.post('http://localhost:5000/api/admin/settings', { enableRoster: enable }, apiConfig);
+      setEnableRoster(enable);
+      setSettingsMessage({ type: 'success', text: response.data.message });
+      setTimeout(() => setSettingsMessage(null), 3000);
+      
+      // Redirect if on eligible tab when turned off
+      if (!enable && activeTab === 'eligible') {
+        setActiveTab('manual');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSettingsMessage({ type: 'danger', text: err.response?.data?.error || 'Failed to save settings.' });
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleToggleActive = async (studentId: string) => {
+    try {
+      const response = await axios.post(`http://localhost:5000/api/admin/students/${studentId}/toggle-active`, {}, apiConfig);
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, isActive: response.data.student.isActive } : s));
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to toggle student active status');
+    }
+  };
+
+  const handleBulkAction = async (action: 'activate' | 'deactivate' | 'delete') => {
+    if (selectedStudentIds.length === 0) return;
+    
+    let confirmMsg = `Are you sure you want to perform this action on ${selectedStudentIds.length} students?`;
+    if (action === 'delete') {
+      confirmMsg = `WARNING: Are you sure you want to delete ${selectedStudentIds.length} students? This will clear all their exam sessions and submissions!`;
+    }
+    
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await axios.post('http://localhost:5000/api/admin/students/bulk-action', {
+        studentIds: selectedStudentIds,
+        action
+      }, apiConfig);
+      
+      if (action === 'delete') {
+        setStudents(prev => prev.filter(s => !selectedStudentIds.includes(s.id)));
+      } else {
+        const activeVal = action === 'activate';
+        setStudents(prev => prev.map(s => selectedStudentIds.includes(s.id) ? { ...s, isActive: activeVal } : s));
+      }
+      setSelectedStudentIds([]);
+      alert(`Bulk action completed successfully.`);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to complete bulk action.');
+    }
+  };
+
+  const handleSelectStudent = (id: string) => {
+    setSelectedStudentIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllStudents = (filteredStudents: StudentRecord[]) => {
+    const allFilteredIds = filteredStudents.map(s => s.id);
+    const allSelected = allFilteredIds.every(id => selectedStudentIds.includes(id));
+    if (allSelected) {
+      setSelectedStudentIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedStudentIds(prev => Array.from(new Set([...prev, ...allFilteredIds])));
     }
   };
 
@@ -363,7 +457,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
     doc.setTextColor(255, 255, 255);
     doc.setFont('Outfit', 'bold');
     doc.setFontSize(22);
-    doc.text('PROGRAMMING QUESTION PORTAL', 14, 20);
+    doc.text('PYTHON ASSESSMENT PORTAL', 14, 20);
     doc.setFontSize(11);
     doc.setFont('Inter', 'normal');
     doc.setTextColor(200, 200, 200);
@@ -514,10 +608,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
   }, []);
 
   useEffect(() => {
+    fetchSettings();
     if (activeTab === 'bank') {
       fetchQuestions();
     } else if (activeTab === 'students') {
       fetchStudents();
+      setSelectedStudentIds([]);
     } else if (activeTab === 'eligible') {
       fetchEligibleStudents();
     }
@@ -671,7 +767,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
       {/* Main Admin Work Area */}
       <div className="container py-4">
         {/* Navigation Tabs */}
-        <div className="d-flex border-bottom mb-4 justify-content-start gap-2 bg-white p-2 rounded-3 shadow-sm">
+        <div className="d-flex border-bottom mb-4 justify-content-start gap-2 bg-white p-2 rounded-3 shadow-sm flex-wrap">
           <button
             onClick={() => setActiveTab('manual')}
             className={`btn d-flex align-items-center gap-2 px-3 py-2 border-0 rounded-2 fw-semibold ${activeTab === 'manual' ? 'btn-primary text-white' : 'btn-light text-muted'}`}
@@ -700,11 +796,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
             <Users size={18} /> Registered Students ({students.length || 'View'})
           </button>
 
+          {enableRoster && (
+            <button
+              onClick={() => setActiveTab('eligible')}
+              className={`btn d-flex align-items-center gap-2 px-3 py-2 border-0 rounded-2 fw-semibold ${activeTab === 'eligible' ? 'btn-primary text-white' : 'btn-light text-muted'}`}
+            >
+              <Users size={18} /> Eligible Roster ({eligibleStudents.length})
+            </button>
+          )}
+
           <button
-            onClick={() => setActiveTab('eligible')}
-            className={`btn d-flex align-items-center gap-2 px-3 py-2 border-0 rounded-2 fw-semibold ${activeTab === 'eligible' ? 'btn-primary text-white' : 'btn-light text-muted'}`}
+            onClick={() => setActiveTab('settings')}
+            className={`btn d-flex align-items-center gap-2 px-3 py-2 border-0 rounded-2 fw-semibold ${activeTab === 'settings' ? 'btn-primary text-white' : 'btn-light text-muted'}`}
           >
-            <Users size={18} /> Eligible Roster ({eligibleStudents.length})
+            <Settings size={18} /> Settings
           </button>
         </div>
 
@@ -1154,52 +1259,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
                   <p className="text-muted small mb-0">Monitor live activity, warn / disqualify students, override logins, and download reports.</p>
                 </div>
                 
-                {/* Export Buttons */}
+                {/* Bulk Actions or Export Buttons */}
                 <div className="d-flex align-items-center gap-2 flex-wrap">
-                  {(() => {
-                    const filteredList = students.filter(s => {
-                      const searchLower = searchQuery.toLowerCase();
-                      const matchesSearch = 
-                        s.name.toLowerCase().includes(searchLower) ||
-                        s.rollNumber.toLowerCase().includes(searchLower) ||
-                        s.email.toLowerCase().includes(searchLower) ||
-                        s.examName.toLowerCase().includes(searchLower);
+                  {selectedStudentIds.length > 0 ? (
+                    <div className="bg-primary-subtle border border-primary-subtle p-1.5 rounded-3 d-flex align-items-center gap-2">
+                      <span className="small text-primary fw-bold px-2">{selectedStudentIds.length} selected</span>
+                      <button onClick={() => handleBulkAction('activate')} className="btn btn-sm btn-success py-1 px-2.5 fw-semibold rounded-2 text-nowrap">Bulk Activate</button>
+                      <button onClick={() => handleBulkAction('deactivate')} className="btn btn-sm btn-warning py-1 px-2.5 fw-semibold rounded-2 text-nowrap">Bulk Deactivate</button>
+                      <button onClick={() => handleBulkAction('delete')} className="btn btn-sm btn-danger py-1 px-2.5 fw-semibold rounded-2 text-nowrap">Bulk Delete</button>
+                      <button onClick={() => setSelectedStudentIds([])} className="btn btn-sm btn-outline-secondary py-1 px-2 fw-semibold rounded-2 text-nowrap">Cancel</button>
+                    </div>
+                  ) : (
+                    (() => {
+                      const filteredList = students.filter(s => {
+                        const searchLower = searchQuery.toLowerCase();
+                        const matchesSearch = 
+                          s.name.toLowerCase().includes(searchLower) ||
+                          s.rollNumber.toLowerCase().includes(searchLower) ||
+                          s.email.toLowerCase().includes(searchLower) ||
+                          s.examName.toLowerCase().includes(searchLower);
 
-                      const matchesBranch = branchFilter === 'All' || s.branch === branchFilter;
-                      const matchesYear = yearFilter === 'All' || s.year === yearFilter;
-                      const matchesSemester = semesterFilter === 'All' || s.semester === semesterFilter;
-                      const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
-                      const matchesExam = examFilter === 'All' || s.examName === examFilter;
+                        const matchesBranch = branchFilter === 'All' || s.branch === branchFilter;
+                        const matchesYear = yearFilter === 'All' || s.year === yearFilter;
+                        const matchesSemester = semesterFilter === 'All' || s.semester === semesterFilter;
+                        const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
+                        const matchesExam = examFilter === 'All' || s.examName === examFilter;
 
-                      return matchesSearch && matchesBranch && matchesYear && matchesSemester && matchesStatus && matchesExam;
-                    });
+                        return matchesSearch && matchesBranch && matchesYear && matchesSemester && matchesStatus && matchesExam;
+                      });
 
-                    return (
-                      <>
-                        <button
-                          onClick={() => handleExportCsv(filteredList)}
-                          className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
-                          disabled={studentsLoading}
-                        >
-                          <FileText size={16} /> Download CSV
-                        </button>
-                        <button
-                          onClick={() => handleExportExcel(filteredList)}
-                          className="btn btn-sm btn-outline-success d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
-                          disabled={studentsLoading}
-                        >
-                          <FileText size={16} /> Download Excel
-                        </button>
-                        <button
-                          onClick={() => handleExportPdf(filteredList)}
-                          className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
-                          disabled={studentsLoading}
-                        >
-                          <FileText size={16} /> Download PDF
-                        </button>
-                      </>
-                    );
-                  })()}
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleExportCsv(filteredList)}
+                            className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
+                            disabled={studentsLoading}
+                          >
+                            <FileText size={16} /> Download CSV
+                          </button>
+                          <button
+                            onClick={() => handleExportExcel(filteredList)}
+                            className="btn btn-sm btn-outline-success d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
+                            disabled={studentsLoading}
+                          >
+                            <FileText size={16} /> Download Excel
+                          </button>
+                          <button
+                            onClick={() => handleExportPdf(filteredList)}
+                            className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1.5 py-2 px-3 fw-semibold rounded-2 text-nowrap"
+                            disabled={studentsLoading}
+                          >
+                            <FileText size={16} /> Download PDF
+                          </button>
+                        </>
+                      );
+                    })()
+                  )}
                 </div>
               </div>
 
@@ -1297,153 +1412,178 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
                   <span className="spinner-border text-primary" role="status"></span>
                   <p className="mt-2 text-muted">Retrieving student records...</p>
                 </div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table admin-table align-middle">
-                    <thead>
-                      <tr>
-                        <th scope="col" className="ps-3 py-2.5" style={{ width: '5%' }}>S.No</th>
-                        <th scope="col" className="py-2.5" style={{ width: '22%' }}>Student Details</th>
-                        <th scope="col" className="py-2.5" style={{ width: '12%' }}>Branch & Batch</th>
-                        <th scope="col" className="py-2.5 text-center" style={{ width: '15%' }}>Monitor Status</th>
-                        <th scope="col" className="py-2.5 text-center" style={{ width: '12%' }}>Warnings Log</th>
-                        <th scope="col" className="py-2.5 text-center" style={{ width: '12%' }}>Grade Score</th>
-                        <th scope="col" className="text-end pe-3 py-2.5" style={{ width: '22%' }}>Roster Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const filtered = students.filter(s => {
-                          const searchLower = searchQuery.toLowerCase();
-                          const matchesSearch = 
-                            s.name.toLowerCase().includes(searchLower) ||
-                            s.rollNumber.toLowerCase().includes(searchLower) ||
-                            s.email.toLowerCase().includes(searchLower) ||
-                            s.examName.toLowerCase().includes(searchLower);
+              ) : (() => {
+                const filtered = students.filter(s => {
+                  const searchLower = searchQuery.toLowerCase();
+                  const matchesSearch = 
+                    s.name.toLowerCase().includes(searchLower) ||
+                    s.rollNumber.toLowerCase().includes(searchLower) ||
+                    s.email.toLowerCase().includes(searchLower) ||
+                    s.examName.toLowerCase().includes(searchLower);
 
-                          const matchesBranch = branchFilter === 'All' || s.branch === branchFilter;
-                          const matchesYear = yearFilter === 'All' || s.year === yearFilter;
-                          const matchesSemester = semesterFilter === 'All' || s.semester === semesterFilter;
-                          const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
-                          const matchesExam = examFilter === 'All' || s.examName === examFilter;
+                  const matchesBranch = branchFilter === 'All' || s.branch === branchFilter;
+                  const matchesYear = yearFilter === 'All' || s.year === yearFilter;
+                  const matchesSemester = semesterFilter === 'All' || s.semester === semesterFilter;
+                  const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
+                  const matchesExam = examFilter === 'All' || s.examName === examFilter;
 
-                          return matchesSearch && matchesBranch && matchesYear && matchesSemester && matchesStatus && matchesExam;
-                        });
+                  return matchesSearch && matchesBranch && matchesYear && matchesSemester && matchesStatus && matchesExam;
+                });
 
-                        if (filtered.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan={7} className="text-center py-5 text-muted small">
-                                No student records match the selected query parameters.
-                              </td>
-                            </tr>
-                          );
-                        }
+                return (
+                  <div className="table-responsive">
+                    <table className="table admin-table align-middle">
+                      <thead>
+                        <tr>
+                          <th scope="col" className="ps-3 py-2.5" style={{ width: '4%' }}>
+                            <input 
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={filtered.length > 0 && filtered.every(s => selectedStudentIds.includes(s.id))}
+                              onChange={() => handleSelectAllStudents(filtered)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </th>
+                          <th scope="col" className="py-2.5" style={{ width: '5%' }}>S.No</th>
+                          <th scope="col" className="py-2.5" style={{ width: '22%' }}>Student Details</th>
+                          <th scope="col" className="py-2.5" style={{ width: '15%' }}>Branch & Batch</th>
+                          <th scope="col" className="py-2.5 text-center" style={{ width: '13%' }}>Monitor Status</th>
+                          <th scope="col" className="py-2.5 text-center" style={{ width: '12%' }}>Warnings Log</th>
+                          <th scope="col" className="py-2.5 text-center" style={{ width: '11%' }}>Grade Score</th>
+                          <th scope="col" className="text-end pe-3 py-2.5" style={{ width: '18%' }}>Roster Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="text-center py-5 text-muted small">
+                              No student records match the selected query parameters.
+                            </td>
+                          </tr>
+                        ) : (
+                          filtered.map((s, idx) => {
+                            let badgeBg = 'bg-secondary';
+                            if (s.status === 'Exam Started') badgeBg = 'bg-warning text-dark';
+                            else if (s.status === 'Submitted' || s.status === 'Completed') badgeBg = 'bg-success';
+                            else if (s.status === 'Disqualified') badgeBg = 'bg-danger';
 
-                        return filtered.map((s, idx) => {
-                          // Get color styling of status badge
-                          let badgeBg = 'bg-secondary';
-                          if (s.status === 'Exam Started') badgeBg = 'bg-warning text-dark';
-                          else if (s.status === 'Submitted' || s.status === 'Completed') badgeBg = 'bg-success';
-                          else if (s.status === 'Disqualified') badgeBg = 'bg-danger';
-
-                          return (
-                            <tr key={s.id}>
-                              <td className="ps-3 fw-semibold text-muted">{idx + 1}</td>
-                              <td>
-                                <div className="fw-bold">{s.name}</div>
-                                <div className="small text-muted">{s.rollNumber}</div>
-                                <div className="small text-muted" style={{ fontSize: '0.75rem' }}>{s.email}</div>
-                                <div className="text-secondary" style={{ fontSize: '0.73rem' }}>Login: {new Date(s.loginTime).toLocaleTimeString()}</div>
-                              </td>
-                              <td>
-                                <div className="badge bg-primary-subtle text-primary mb-1">{s.branch}</div>
-                                <div className="small text-muted" style={{ fontSize: '0.75rem' }}>{s.year} - {s.semester}</div>
-                                <div className="text-success fw-medium" style={{ fontSize: '0.73rem' }}>Drafts: {s.codeSubmissions?.filter(c => c.draftCode?.trim() || c.submittedCode?.trim()).length || 0} / 5</div>
-                              </td>
-                              {/* Status Column with Dropdown override */}
-                              <td className="text-center">
-                                <div className="d-flex flex-column align-items-center gap-1">
-                                  <span className={`badge ${badgeBg} py-1.5 px-2.5 rounded-pill mb-1`} style={{ fontSize: '0.8rem' }}>
-                                    {s.status}
+                            return (
+                              <tr key={s.id}>
+                                <td className="ps-3">
+                                  <input 
+                                    type="checkbox"
+                                    className="form-check-input"
+                                    checked={selectedStudentIds.includes(s.id)}
+                                    onChange={() => handleSelectStudent(s.id)}
+                                    style={{ cursor: 'pointer' }}
+                                  />
+                                </td>
+                                <td className="fw-semibold text-muted">{idx + 1}</td>
+                                <td>
+                                  <div className="fw-bold">{s.name}</div>
+                                  <div className="small text-muted">{s.rollNumber}</div>
+                                  <div className="small text-muted" style={{ fontSize: '0.75rem' }}>{s.email}</div>
+                                  <div className="text-secondary" style={{ fontSize: '0.73rem' }}>Login: {new Date(s.loginTime).toLocaleTimeString()}</div>
+                                </td>
+                                <td>
+                                  <div className="badge bg-primary-subtle text-primary mb-1">{s.branch}</div>
+                                  <div className="small text-muted" style={{ fontSize: '0.75rem' }}>{s.year} - {s.semester}</div>
+                                  <div className="text-success fw-medium mb-1" style={{ fontSize: '0.73rem' }}>Drafts: {s.codeSubmissions?.filter(c => c.draftCode?.trim() || c.submittedCode?.trim()).length || 0} / 5</div>
+                                  
+                                  {/* Active Toggle Switch */}
+                                  <div className="form-check form-switch p-0 m-0">
+                                    <input
+                                      className="form-check-input ms-0"
+                                      type="checkbox"
+                                      role="switch"
+                                      checked={s.isActive}
+                                      onChange={() => handleToggleActive(s.id)}
+                                      style={{ cursor: 'pointer', float: 'none', display: 'inline-block', verticalAlign: 'middle' }}
+                                    />
+                                    <span className={`small fw-semibold ms-1.5 align-middle ${s.isActive ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.75rem' }}>
+                                      {s.isActive ? 'Active' : 'Inactive'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="text-center">
+                                  <div className="d-flex flex-column align-items-center gap-1">
+                                    <span className={`badge ${badgeBg} py-1.5 px-2.5 rounded-pill mb-1`} style={{ fontSize: '0.8rem' }}>
+                                      {s.status}
+                                    </span>
+                                    {s.terminationReason && (
+                                      <div className="text-danger fw-bold" style={{ fontSize: '0.68rem', lineHeight: '1.2' }}>
+                                        {s.terminationReason}
+                                      </div>
+                                    )}
+                                    {s.status === 'Exam Started' && s.timerExpiryTime && (
+                                      <div className="text-muted fw-semibold" style={{ fontSize: '0.68rem' }}>
+                                        Expires: {new Date(s.timerExpiryTime).toLocaleTimeString()}
+                                      </div>
+                                    )}
+                                    <select
+                                      value={s.status}
+                                      onChange={(e) => handleStatusOverride(s.id, e.target.value)}
+                                      className="form-select form-select-sm py-0.5 px-1.5 mt-1"
+                                      style={{ fontSize: '0.7rem', maxWidth: '120px' }}
+                                    >
+                                      <option value="Registered">Registered</option>
+                                      <option value="Waiting for Exam">Waiting</option>
+                                      <option value="Exam Started">Exam Started</option>
+                                      <option value="Submitted">Submitted</option>
+                                      <option value="Completed">Completed</option>
+                                      <option value="Absent">Absent</option>
+                                      <option value="Disqualified">Disqualified</option>
+                                    </select>
+                                  </div>
+                                </td>
+                                <td className="text-center">
+                                  <div className="d-flex flex-column align-items-center gap-1">
+                                    <span className={`badge ${s.warningCount > 0 ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'} py-1.5 px-2.5 rounded`} style={{ fontSize: '0.8rem' }}>
+                                      Warnings: {s.warningCount} / 3
+                                    </span>
+                                    <button
+                                      onClick={() => handleWarningOverride(s.id, s.warningCount)}
+                                      className="btn btn-sm btn-outline-warning py-0.5 px-2"
+                                      style={{ fontSize: '0.7rem' }}
+                                      disabled={s.status === 'Disqualified'}
+                                    >
+                                      + Add Warning
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="text-center">
+                                  <div className="fw-bold">{s.marksObtained} / {s.totalMarks}</div>
+                                  <span className={`badge ${s.finalResult === 'Pass' ? 'bg-success' : s.finalResult === 'Fail' ? 'bg-danger' : 'bg-secondary'} small`} style={{ fontSize: '0.7rem' }}>
+                                    {s.finalResult}
                                   </span>
-                                  {s.terminationReason && (
-                                    <div className="text-danger fw-bold" style={{ fontSize: '0.68rem', lineHeight: '1.2' }}>
-                                      {s.terminationReason}
-                                    </div>
-                                  )}
-                                  {s.status === 'Exam Started' && s.timerExpiryTime && (
-                                    <div className="text-muted fw-semibold" style={{ fontSize: '0.68rem' }}>
-                                      Expires: {new Date(s.timerExpiryTime).toLocaleTimeString()}
-                                    </div>
-                                  )}
-                                  {/* Override Select */}
-                                  <select
-                                    value={s.status}
-                                    onChange={(e) => handleStatusOverride(s.id, e.target.value)}
-                                    className="form-select form-select-sm py-0.5 px-1.5 mt-1"
-                                    style={{ fontSize: '0.7rem', maxWidth: '120px' }}
-                                  >
-                                    <option value="Registered">Registered</option>
-                                    <option value="Waiting for Exam">Waiting</option>
-                                    <option value="Exam Started">Exam Started</option>
-                                    <option value="Submitted">Submitted</option>
-                                    <option value="Completed">Completed</option>
-                                    <option value="Absent">Absent</option>
-                                    <option value="Disqualified">Disqualified</option>
-                                  </select>
-                                </div>
-                              </td>
-                              {/* Warnings Monitor Column */}
-                              <td className="text-center">
-                                <div className="d-flex flex-column align-items-center gap-1">
-                                  <span className={`badge ${s.warningCount > 0 ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'} py-1.5 px-2.5 rounded`} style={{ fontSize: '0.8rem' }}>
-                                    Warnings: {s.warningCount} / 3
-                                  </span>
-                                  <button
-                                    onClick={() => handleWarningOverride(s.id, s.warningCount)}
-                                    className="btn btn-sm btn-outline-warning py-0.5 px-2"
-                                    style={{ fontSize: '0.7rem' }}
-                                    disabled={s.status === 'Disqualified'}
-                                  >
-                                    + Add Warning
-                                  </button>
-                                </div>
-                              </td>
-                              {/* Grade Results Column */}
-                              <td className="text-center">
-                                <div className="fw-bold">{s.marksObtained} / {s.totalMarks}</div>
-                                <span className={`badge ${s.finalResult === 'Pass' ? 'bg-success' : s.finalResult === 'Fail' ? 'bg-danger' : 'bg-secondary'} small`} style={{ fontSize: '0.7rem' }}>
-                                  {s.finalResult}
-                                </span>
-                              </td>
-                              {/* Row Actions */}
-                              <td className="text-end pe-3">
-                                <div className="d-flex gap-1 justify-content-end">
-                                  <button
-                                    onClick={() => handleExportIndividualReport(s)}
-                                    className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
-                                    title="Download Student PDF Report"
-                                  >
-                                    <FileText size={12} /> Report
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteStudent(s.id)}
-                                    className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1"
-                                    title="Delete registration details"
-                                  >
-                                    <Trash2 size={12} /> Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                                </td>
+                                <td className="text-end pe-3">
+                                  <div className="d-flex gap-1 justify-content-end">
+                                    <button
+                                      onClick={() => handleExportIndividualReport(s)}
+                                      className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
+                                      title="Download Student PDF Report"
+                                    >
+                                      <FileText size={12} /> Report
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteStudent(s.id)}
+                                      className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1"
+                                      title="Delete registration details"
+                                    >
+                                      <Trash2 size={12} /> Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1531,6 +1671,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onLogout 
                   </table>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: Settings */}
+        {activeTab === 'settings' && (
+          <div className="portal-card p-4 p-md-5 animate-fade-in text-start" style={{ maxWidth: '750px' }}>
+            <h4 className="fw-bold mb-3 font-heading d-flex align-items-center gap-2">
+              <Settings className="text-primary" /> Assessment Settings
+            </h4>
+            <p className="text-muted small mb-4">
+              Configure system-wide policies for the Python Coding Assessment Portal.
+            </p>
+
+            {settingsMessage && (
+              <div className={`alert alert-${settingsMessage.type} border-0 rounded-3 shadow-sm mb-4`}>
+                {settingsMessage.text}
+              </div>
+            )}
+
+            <div className="bg-light p-4 rounded-3 border mb-4">
+              <div className="form-check form-switch mb-3">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="enableRosterToggle"
+                  checked={enableRoster}
+                  onChange={(e) => handleSaveSettings(e.target.checked)}
+                  disabled={settingsLoading}
+                  style={{ cursor: 'pointer', scale: '1.25', marginRight: '10px' }}
+                />
+                <label className="form-check-label fw-bold text-dark font-heading" htmlFor="enableRosterToggle" style={{ cursor: 'pointer' }}>
+                  Enable Eligible Examination Roster
+                </label>
+              </div>
+              <p className="text-muted small ps-4 mb-0">
+                <strong>When OFF (Simple Workflows):</strong> Any student can register and write the exam immediately. Registration directly registers the student details in the dashboard.
+              </p>
+              <p className="text-muted small ps-4 mt-2 mb-0">
+                <strong>When ON (Advanced Workflows):</strong> Only students uploaded in the "Eligible Roster" tab will be permitted to access and submit exam sheets.
+              </p>
+            </div>
+            
+            <div className="text-end border-top pt-3 text-muted small">
+              Settings are saved automatically upon toggle.
             </div>
           </div>
         )}

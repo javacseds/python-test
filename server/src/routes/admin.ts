@@ -198,10 +198,13 @@ router.delete('/questions/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 7. GET all registered students with assigned questions
+// 7. GET all registered students with assigned questions (exclude status Eligible)
 router.get('/students', authenticateAdmin, async (req, res) => {
   try {
     const students = await prisma.student.findMany({
+      where: {
+        status: { not: 'Eligible' }
+      },
       include: {
         assignments: {
           include: {
@@ -233,6 +236,8 @@ router.get('/students', authenticateAdmin, async (req, res) => {
       totalMarks: student.totalMarks,
       finalResult: student.finalResult,
       createdAt: student.createdAt,
+      isActive: student.isActive,
+      isEligible: student.isEligible,
       questions: student.assignments.map(a => a.question.title),
       codeSubmissions: student.assignments.map(a => ({
         questionId: a.questionId,
@@ -328,7 +333,8 @@ router.post('/students/:id/warning', authenticateAdmin, async (req, res) => {
 // 11. GET all eligible students
 router.get('/eligible-students', authenticateAdmin, async (req, res) => {
   try {
-    const list = await prisma.eligibleStudent.findMany({
+    const list = await prisma.student.findMany({
+      where: { isEligible: true },
       orderBy: { rollNumber: 'asc' }
     });
     return res.json(list);
@@ -352,9 +358,10 @@ router.post('/upload-eligible-students', authenticateAdmin, async (req, res) => 
       if (!s.rollNumber) continue;
       
       // Upsert: update if exists, otherwise create
-      await prisma.eligibleStudent.upsert({
+      await prisma.student.upsert({
         where: { rollNumber: s.rollNumber },
         update: {
+          isEligible: true,
           name: s.name || '',
           branch: s.branch || '',
           year: s.year || '',
@@ -367,7 +374,10 @@ router.post('/upload-eligible-students', authenticateAdmin, async (req, res) => 
           branch: s.branch || '',
           year: s.year || '',
           semester: s.semester || '',
-          email: s.email || ''
+          email: s.email || '',
+          isEligible: true,
+          isActive: true,
+          status: 'Eligible'
         }
       });
       addedCount++;
@@ -387,13 +397,90 @@ router.post('/upload-eligible-students', authenticateAdmin, async (req, res) => 
 router.delete('/eligible-students/:id', authenticateAdmin, async (req, res) => {
   const { id } = req.params;
   try {
-    await prisma.eligibleStudent.delete({
-      where: { id }
-    });
+    const student = await prisma.student.findUnique({ where: { id } });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    if (student.status === 'Eligible') {
+      await prisma.student.delete({
+        where: { id }
+      });
+    } else {
+      await prisma.student.update({
+        where: { id },
+        data: { isEligible: false }
+      });
+    }
+
     return res.json({ message: 'Eligible student removed successfully' });
   } catch (error) {
     console.error('Error removing eligible student:', error);
     return res.status(500).json({ error: 'Failed to remove student from eligible roster.' });
+  }
+});
+
+// 14. Toggle Student Active/Inactive Status
+router.post('/students/:id/toggle-active', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const student = await prisma.student.findUnique({ where: { id } });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const updated = await prisma.student.update({
+      where: { id },
+      data: { isActive: !student.isActive }
+    });
+
+    await broadcastStudentUpdate(updated.id);
+
+    return res.json({ message: `Student status updated to ${updated.isActive ? 'Active' : 'Inactive'}`, student: updated });
+  } catch (error) {
+    console.error('Error toggling student active status:', error);
+    return res.status(500).json({ error: 'Failed to update student active status' });
+  }
+});
+
+// 15. Bulk actions on students
+router.post('/students/bulk-action', authenticateAdmin, async (req, res) => {
+  const { studentIds, action, value } = req.body;
+  if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+    return res.status(400).json({ error: 'No student IDs provided' });
+  }
+
+  try {
+    if (action === 'activate') {
+      await prisma.student.updateMany({
+        where: { id: { in: studentIds } },
+        data: { isActive: true }
+      });
+    } else if (action === 'deactivate') {
+      await prisma.student.updateMany({
+        where: { id: { in: studentIds } },
+        data: { isActive: false }
+      });
+    } else if (action === 'delete') {
+      await prisma.student.deleteMany({
+        where: { id: { in: studentIds } }
+      });
+    } else if (action === 'toggle-eligibility') {
+      await prisma.student.updateMany({
+        where: { id: { in: studentIds } },
+        data: { isEligible: !!value }
+      });
+    } else {
+      return res.status(400).json({ error: 'Invalid bulk action' });
+    }
+
+    // Broadcast update for each student
+    for (const id of studentIds) {
+      try {
+        await broadcastStudentUpdate(id);
+      } catch (_) {}
+    }
+
+    return res.json({ message: `Bulk action ${action} completed successfully` });
+  } catch (error) {
+    console.error('Error performing bulk action:', error);
+    return res.status(500).json({ error: 'Failed to complete bulk action' });
   }
 });
 

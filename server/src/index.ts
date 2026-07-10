@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import adminRoutes from './routes/admin';
 import studentRoutes from './routes/student';
+import settingsRoutes from './routes/settings';
 import { prisma } from './prisma';
 import bcrypt from 'bcryptjs';
 import { initSocket } from './utils/socket';
@@ -24,6 +25,7 @@ app.use(express.json());
 
 // API Routes
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/settings', settingsRoutes);
 app.use('/api/student', studentRoutes);
 
 // Health Check
@@ -121,6 +123,45 @@ async function runAutoSeed() {
   }
 }
 
+// Migration script for legacy eligible students to the single Student table
+async function migrateEligibleStudents() {
+  try {
+    const eligibleCount = await prisma.eligibleStudent.count();
+    if (eligibleCount > 0) {
+      console.log(`[Migration] Found ${eligibleCount} EligibleStudent records. Merging to Student collection...`);
+      const list = await prisma.eligibleStudent.findMany();
+      for (const item of list) {
+        await prisma.student.upsert({
+          where: { rollNumber: item.rollNumber },
+          update: {
+            isEligible: true,
+            name: item.name,
+            branch: item.branch,
+            year: item.year,
+            semester: item.semester,
+            email: item.email
+          },
+          create: {
+            rollNumber: item.rollNumber,
+            name: item.name,
+            branch: item.branch,
+            year: item.year,
+            semester: item.semester,
+            email: item.email,
+            isEligible: true,
+            isActive: true,
+            status: "Eligible"
+          }
+        });
+      }
+      await prisma.eligibleStudent.deleteMany();
+      console.log('[Migration] Successfully merged and cleaned up eligible student roster.');
+    }
+  } catch (err) {
+    console.error('[Migration Error] Failed to migrate eligible students:', err);
+  }
+}
+
 // Start Server
 initSocket(server);
 
@@ -131,6 +172,7 @@ server.listen(PORT, async () => {
     await prisma.$connect();
     console.log('🔌 Connected to SQLite/PostgreSQL successfully.');
     await runAutoSeed();
+    await migrateEligibleStudents();
   } catch (dbError) {
     console.warn('⚠️ Could not connect to database. Please verify configurations.');
     console.error(dbError);

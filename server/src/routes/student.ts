@@ -28,20 +28,11 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Check if eligibility check is enforced
-    const requireEligibility = process.env.REQUIRE_ELIGIBILITY_CHECK === 'true';
-
-    if (requireEligibility) {
-      const isEligible = await prisma.eligibleStudent.findUnique({
-        where: { rollNumber }
-      });
-
-      if (!isEligible) {
-        return res.status(400).json({
-          error: `Roll Number '${rollNumber}' is not in the eligible student roster. Please contact your coordinator.`
-        });
-      }
-    }
+    // Check if eligibility check is enforced via settings
+    const rosterSetting = await prisma.setting.findUnique({
+      where: { key: 'enableRoster' }
+    });
+    const requireEligibility = rosterSetting ? rosterSetting.value === 'true' : false;
 
     // 1. Check if student already exists
     let student = await prisma.student.findUnique({
@@ -55,6 +46,22 @@ router.post('/register', async (req, res) => {
       }
     });
 
+    // Roster Validation
+    if (requireEligibility) {
+      if (!student || !student.isEligible) {
+        return res.status(400).json({
+          error: `Roll Number '${rollNumber}' is not in the eligible student roster. Please contact your coordinator.`
+        });
+      }
+    }
+
+    // Active Status Validation
+    if (student && !student.isActive) {
+      return res.status(400).json({
+        error: `Your student account has been marked as inactive. Please contact your coordinator.`
+      });
+    }
+
     let assignedQuestions = [];
 
     if (student) {
@@ -64,10 +71,18 @@ router.post('/register', async (req, res) => {
           error: 'You have already submitted this exam or have been disqualified.'
         });
       }
-      // Update details in case student changed email or branch
+      // Update details (and status from "Eligible" to "Registered" if first login)
+      const newStatus = student.status === 'Eligible' ? 'Registered' : student.status;
       student = await prisma.student.update({
         where: { id: student.id },
-        data: { name, branch, year, semester, email },
+        data: { 
+          name, 
+          branch, 
+          year, 
+          semester, 
+          email,
+          status: newStatus
+        },
         include: {
           assignments: {
             include: {
@@ -81,7 +96,17 @@ router.post('/register', async (req, res) => {
     } else {
       // Create new student record
       student = await prisma.student.create({
-        data: { name, rollNumber, branch, year, semester, email },
+        data: { 
+          name, 
+          rollNumber, 
+          branch, 
+          year, 
+          semester, 
+          email,
+          isEligible: true, // Registration directly makes them eligible when Roster is OFF
+          isActive: true,
+          status: 'Registered'
+        },
         include: {
           assignments: {
             include: {

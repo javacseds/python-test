@@ -106,7 +106,7 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({ onLoginSuccess, onNa
       <div className="portal-card p-4 p-md-5 animate-fade-in" style={{ maxWidth: '560px', width: '100%' }}>
         <div className="text-center mb-4">
           <span className="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill mb-2 fw-semibold">Assessment Portal</span>
-          <h2 className="fw-bold mb-1" style={{ letterSpacing: '-0.5px' }}>Programming Question Portal</h2>
+          <h2 className="fw-bold mb-1" style={{ letterSpacing: '-0.5px' }}>Python Assessment Portal</h2>
           <p className="text-muted small">Please enter your registration details to start your assessment session.</p>
         </div>
 

@@ -35,8 +35,19 @@ model Student {
   terminationReason String?
   timerExpiryTime   DateTime?
   createdAt         DateTime             @default(now())
+  
+  // Roster and active flags
+  isActive          Boolean              @default(true)
+  isEligible        Boolean              @default(false)
+  
   assignments       QuestionAssignment[]
   sessions          StudentSession[]
+}
+
+model Setting {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  key   String @unique
+  value String
 }
 
 model Question {
