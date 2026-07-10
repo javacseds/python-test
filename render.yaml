@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: python-assessment-backend
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: SESSION_DURATION_HOURS
+        value: 4
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
